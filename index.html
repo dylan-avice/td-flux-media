@@ -39,6 +39,11 @@
                 padding-top: 10px;
                 border-top: 1px dashed #ccc;
             }
+            .quality-info {
+                font-weight: bold;
+                color: #0066cc;
+                margin: 5px 0;
+            }
         </style>
 
         <div class="av-container">
@@ -46,7 +51,6 @@
                 <video id="av-video" style="display:none;"></video>
                 <div class="info-container">
                     <div id="info"></div>
-                    <!-- Zone d'affichage pour getPhotoCapabilities() et getPhotoSettings() -->
                     <div id="photo-capabilities"></div>
                 </div>
             </div>
@@ -70,6 +74,7 @@
             <!-- Section 1 : Frame capturée via grabFrame() -->
             <div class="photo-section">
                 <h3>Frame capturée (grabFrame) :</h3>
+                <p id="grab-quality" class="quality-info"></p>
                 <canvas id="frame-canvas"></canvas>
                 <br>
                 <a id="download-frame-link" style="display:none;" download="frame.png">Télécharger la frame</a>
@@ -78,6 +83,7 @@
             <!-- Section 2 : Photo HD capturée via takePhoto() -->
             <div class="photo-section">
                 <h3>Photo haute résolution (takePhoto) :</h3>
+                <p id="photo-quality" class="quality-info"></p>
                 <img id="photo-img" alt="Aucune photo prise" />
                 <br>
                 <a id="download-photo-link" style="display:none;" download="photo.jpg">Télécharger la photo (HD)</a>
@@ -116,9 +122,11 @@
                 
                 const canvasEl = this.shadowRoot.querySelector('#frame-canvas');
                 const downloadFrameLink = this.shadowRoot.querySelector('#download-frame-link');
+                const grabQualityEl = this.shadowRoot.querySelector('#grab-quality');
                 
                 const imgEl = this.shadowRoot.querySelector('#photo-img');
                 const downloadPhotoLink = this.shadowRoot.querySelector('#download-photo-link');
+                const photoQualityEl = this.shadowRoot.querySelector('#photo-quality');
                 
                 const infoDiv = this.shadowRoot.querySelector('#info');
                 const photoCapabilitiesDiv = this.shadowRoot.querySelector('#photo-capabilities');
@@ -151,7 +159,6 @@
                                 const videoTrack = stream.getVideoTracks()[0];
                                 if ('ImageCapture' in window) {
                                     this.imageCapture = new ImageCapture(videoTrack);
-                                    // Lecture et affichage des capacités matérielles
                                     this.displayPhotoCapabilities(photoCapabilitiesDiv);
                                 } else {
                                     photoCapabilitiesDiv.innerHTML = "<p><em>API ImageCapture non supportée.</em></p>";
@@ -177,7 +184,7 @@
                         .catch((err) => console.error(`${err.name}: ${err.message}`));
                 });
 
-                // 1. Capture grabFrame()
+                // 1. Capture grabFrame() + affichage de la résolution
                 btnGrabFrame.addEventListener('click', () => {
                     if (this.imageCapture) {
                         this.imageCapture.grabFrame()
@@ -187,6 +194,10 @@
                                 const context = canvasEl.getContext('2d');
                                 context.drawImage(imageBitmap, 0, 0);
 
+                                // Affichage de la qualité réelle extraite
+                                const mpx = ((imageBitmap.width * imageBitmap.height) / 1000000).toFixed(2);
+                                grabQualityEl.textContent = `Résolution : ${imageBitmap.width} x ${imageBitmap.height} px (${mpx} Mpx) — Qualité flux vidéo`;
+
                                 const frameUrl = canvasEl.toDataURL('image/png');
                                 downloadFrameLink.href = frameUrl;
                                 downloadFrameLink.style.display = 'inline-block';
@@ -195,13 +206,19 @@
                     }
                 });
 
-                // 2. Capture takePhoto()
+                // 2. Capture takePhoto() + affichage de la résolution
                 btnTakePhoto.addEventListener('click', () => {
                     if (this.imageCapture) {
                         this.imageCapture.takePhoto()
                             .then((blob) => {
                                 const photoUrl = URL.createObjectURL(blob);
                                 imgEl.src = photoUrl;
+
+                                // Lecture des dimensions réelles de la photo chargée
+                                imgEl.onload = () => {
+                                    const mpx = ((imgEl.naturalWidth * imgEl.naturalHeight) / 1000000).toFixed(2);
+                                    photoQualityEl.textContent = `Résolution : ${imgEl.naturalWidth} x ${imgEl.naturalHeight} px (${mpx} Mpx) — Qualité capteur HD`;
+                                };
 
                                 downloadPhotoLink.href = photoUrl;
                                 downloadPhotoLink.style.display = 'inline-block';
@@ -210,7 +227,7 @@
                     }
                 });
 
-                // Stopper tout et réinitialiser tous les éléments
+                // Stopper tout et réinitialiser
                 btnStop.addEventListener('click', () => {
                     if (this.mediaStream) {
                         this.mediaStream.getTracks().forEach(track => track.stop());
@@ -224,8 +241,9 @@
                     audioEl.style.display = 'none';
                     infoDiv.innerHTML = '';
                     photoCapabilitiesDiv.innerHTML = '';
+                    grabQualityEl.textContent = '';
+                    photoQualityEl.textContent = '';
 
-                    // Effacement du canvas et de son lien
                     const context = canvasEl.getContext('2d');
                     context.clearRect(0, 0, canvasEl.width, canvasEl.height);
                     canvasEl.width = 0;
@@ -233,12 +251,10 @@
                     downloadFrameLink.style.display = 'none';
                     downloadFrameLink.removeAttribute('href');
 
-                    // Effacement de l'image photo HD et de son lien
                     imgEl.removeAttribute('src');
                     downloadPhotoLink.style.display = 'none';
                     downloadPhotoLink.removeAttribute('href');
 
-                    // Réinitialisation des boutons
                     btnStart.disabled = false;
                     btnStop.disabled = true;
                     btnPauseVideo.disabled = true;
@@ -283,7 +299,6 @@
                 container.innerHTML = html;
             }
 
-            // Affiche getPhotoCapabilities() et getPhotoSettings()
             displayPhotoCapabilities(container) {
                 if (!this.imageCapture) return;
 
