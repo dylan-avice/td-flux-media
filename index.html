@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exo 6 - Avec Template</title>
+    <title>Exo 9 - ImageCapture API</title>
     <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon">
 </head>
 <body>
-    <h1>Flux Media - Exo 6 </h1>
+    <h1>Flux Media - Exo 9 (ImageCapture API)</h1>
 
     <template id="audio-video-template">
         <style>
@@ -16,14 +16,34 @@
                 font-family: sans-serif;
                 margin: 10px 0;
             }
+            .media-row {
+                display: flex;
+                flex-direction: row;
+                align-items: flex-start;
+                gap: 15px;
+                margin-bottom: 10px;
+            }
             .controls {
                 margin-top: 10px;
+            }
+            .photo-section {
+                margin-top: 15px;
+            }
+            img, canvas {
+                max-width: 100%;
+                border: 1px solid #ccc;
+                margin-top: 5px;
             }
         </style>
 
         <div class="av-container">
-            <video id="av-video" style="display:none;"></video>
+            <div class="media-row">
+                <video id="av-video" style="display:none;"></video>
+                <div id="info"></div>
+            </div>
+
             <audio id="av-audio" style="display:none;"></audio>
+
             <div class="controls">
                 <button id="btnStart">Démarrer</button>
                 <button id="btnStop" disabled>Stopper tout</button>
@@ -31,11 +51,28 @@
                 <span>Vidéo : </span>
                 <button id="btnPauseVideo" disabled>Pause Vidéo</button>
                 <button id="btnFullscreen" disabled>Plein écran</button>
+                <button id="btnGrabFrame" disabled>Grab Frame</button>
+                <button id="btnTakePhoto" disabled>Take Photo (Blob)</button>
                 <br><br>
                 <span>Audio : </span>
                 <button id="btnPauseAudio" disabled>Mute Audio</button>
             </div>
-            <div id="info"></div>
+
+            <!-- Section 1 : Frame capturée via grabFrame() -->
+            <div class="photo-section">
+                <h3>Frame capturée (grabFrame) :</h3>
+                <canvas id="frame-canvas"></canvas>
+                <br>
+                <a id="download-frame-link" style="display:none;" download="frame.png">Télécharger la frame</a>
+            </div>
+
+            <!-- Section 2 : Photo HD capturée via takePhoto() -->
+            <div class="photo-section">
+                <h3>Photo haute résolution (takePhoto) :</h3>
+                <img id="photo-img" alt="Aucune photo prise" />
+                <br>
+                <a id="download-photo-link" style="display:none;" download="photo.jpg">Télécharger la photo (HD)</a>
+            </div>
         </div>
     </template>
 
@@ -46,12 +83,10 @@
             constructor() {
                 super();
                 this.mediaStream = null;
+                this.imageCapture = null;
 
-                // Attachement du Shadow DOM
                 const shadowRoot = this.attachShadow({ mode: 'open' });
                 const template = document.getElementById('audio-video-template');
-                
-                // Clonage du contenu du template dans le Shadow DOM
                 shadowRoot.appendChild(template.content.cloneNode(true));
             }
 
@@ -60,7 +95,6 @@
                 const widthAttr = this.getAttribute('width');
                 const heightAttr = this.getAttribute('height');
 
-                // Récupération des éléments à l'intérieur du shadowRoot
                 const videoEl = this.shadowRoot.querySelector('#av-video');
                 const audioEl = this.shadowRoot.querySelector('#av-audio');
                 const btnStart = this.shadowRoot.querySelector('#btnStart');
@@ -68,12 +102,20 @@
                 const btnPauseVideo = this.shadowRoot.querySelector('#btnPauseVideo');
                 const btnFullscreen = this.shadowRoot.querySelector('#btnFullscreen');
                 const btnPauseAudio = this.shadowRoot.querySelector('#btnPauseAudio');
+                const btnGrabFrame = this.shadowRoot.querySelector('#btnGrabFrame');
+                const btnTakePhoto = this.shadowRoot.querySelector('#btnTakePhoto');
+                
+                const canvasEl = this.shadowRoot.querySelector('#frame-canvas');
+                const downloadFrameLink = this.shadowRoot.querySelector('#download-frame-link');
+                
+                const imgEl = this.shadowRoot.querySelector('#photo-img');
+                const downloadPhotoLink = this.shadowRoot.querySelector('#download-photo-link');
+                
                 const infoDiv = this.shadowRoot.querySelector('#info');
 
                 if (widthAttr) videoEl.setAttribute('width', widthAttr);
                 if (heightAttr) videoEl.setAttribute('height', heightAttr);
 
-                // Démarrer le flux
                 btnStart.addEventListener('click', () => {
                     const wantAudio = sourceAttr === 'audio' || sourceAttr === 'both';
                     const wantVideo = sourceAttr === 'video' || sourceAttr === 'both';
@@ -95,6 +137,11 @@
                                     }
                                     videoEl.play();
                                 };
+
+                                const videoTrack = stream.getVideoTracks()[0];
+                                if ('ImageCapture' in window) {
+                                    this.imageCapture = new ImageCapture(videoTrack);
+                                }
                             }
 
                             if (wantAudio && !wantVideo) {
@@ -110,31 +157,83 @@
                             btnPauseVideo.disabled = !wantVideo;
                             btnFullscreen.disabled = !wantVideo;
                             btnPauseAudio.disabled = !wantAudio;
-                            btnPauseVideo.textContent = "Pause Vidéo";
-                            btnPauseAudio.textContent = "Mute Audio";
+                            btnGrabFrame.disabled = !wantVideo;
+                            btnTakePhoto.disabled = !wantVideo;
                         })
                         .catch((err) => console.error(`${err.name}: ${err.message}`));
                 });
 
-                // Stopper tout
+                // 1. Capture grabFrame()
+                btnGrabFrame.addEventListener('click', () => {
+                    if (this.imageCapture) {
+                        this.imageCapture.grabFrame()
+                            .then((imageBitmap) => {
+                                canvasEl.width = imageBitmap.width;
+                                canvasEl.height = imageBitmap.height;
+                                const context = canvasEl.getContext('2d');
+                                context.drawImage(imageBitmap, 0, 0);
+
+                                // Conversion du canvas en DataURL PNG pour le téléchargement
+                                const frameUrl = canvasEl.toDataURL('image/png');
+                                downloadFrameLink.href = frameUrl;
+                                downloadFrameLink.style.display = 'inline-block';
+                            })
+                            .catch((err) => console.error("Erreur grabFrame :", err));
+                    }
+                });
+
+                // 2. Capture takePhoto()
+                btnTakePhoto.addEventListener('click', () => {
+                    if (this.imageCapture) {
+                        this.imageCapture.takePhoto()
+                            .then((blob) => {
+                                const photoUrl = URL.createObjectURL(blob);
+                                imgEl.src = photoUrl;
+
+                                downloadPhotoLink.href = photoUrl;
+                                downloadPhotoLink.style.display = 'inline-block';
+                            })
+                            .catch((err) => console.error("Erreur takePhoto :", err));
+                    }
+                });
+
+                // Stopper tout et réinitialiser tous les éléments
                 btnStop.addEventListener('click', () => {
                     if (this.mediaStream) {
                         this.mediaStream.getTracks().forEach(track => track.stop());
                         videoEl.srcObject = null;
                         audioEl.srcObject = null;
                         this.mediaStream = null;
+                        this.imageCapture = null;
                     }
+
                     videoEl.style.display = 'none';
                     audioEl.style.display = 'none';
                     infoDiv.innerHTML = '';
+
+                    // Effacement du canvas et de son lien
+                    const context = canvasEl.getContext('2d');
+                    context.clearRect(0, 0, canvasEl.width, canvasEl.height);
+                    canvasEl.width = 0;
+                    canvasEl.height = 0;
+                    downloadFrameLink.style.display = 'none';
+                    downloadFrameLink.removeAttribute('href');
+
+                    // Effacement de l'image photo HD et de son lien
+                    imgEl.removeAttribute('src');
+                    downloadPhotoLink.style.display = 'none';
+                    downloadPhotoLink.removeAttribute('href');
+
+                    // Réinitialisation des boutons
                     btnStart.disabled = false;
                     btnStop.disabled = true;
                     btnPauseVideo.disabled = true;
                     btnFullscreen.disabled = true;
                     btnPauseAudio.disabled = true;
+                    btnGrabFrame.disabled = true;
+                    btnTakePhoto.disabled = true;
                 });
 
-                // Pause Vidéo
                 btnPauseVideo.addEventListener('click', () => {
                     if (videoEl.paused) {
                         videoEl.play();
@@ -145,7 +244,6 @@
                     }
                 });
 
-                // Pause Audio (track.enabled)
                 btnPauseAudio.addEventListener('click', () => {
                     const audioTrack = this.mediaStream?.getAudioTracks()[0];
                     if (audioTrack) {
@@ -154,7 +252,6 @@
                     }
                 });
 
-                // Plein écran
                 btnFullscreen.addEventListener('click', () => {
                     if (videoEl.requestFullscreen) videoEl.requestFullscreen();
                 });
@@ -163,10 +260,10 @@
             displayInfo(stream, container) {
                 let html = "";
                 stream.getTracks().forEach((track) => {
-                    html += `<p><strong>Piste ${track.kind} :</strong> ${track.label}</p>`;
+                    html += `<p style="margin: 0 0 5px 0;"><strong>Piste ${track.kind} :</strong> ${track.label}</p>`;
                     if (track.kind === 'video') {
                         const s = track.getSettings();
-                        html += `<p>Dimensions : ${s.width}x${s.height} px | FPS : ${s.frameRate || 'N/C'}</p>`;
+                        html += `<p style="margin: 0 0 5px 0;">Dimensions : ${s.width}x${s.height} px | FPS : ${s.frameRate || 'N/C'}</p>`;
                     }
                 });
                 container.innerHTML = html;
