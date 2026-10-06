@@ -34,12 +34,21 @@
                 border: 1px solid #ccc;
                 margin-top: 5px;
             }
+            #photo-capabilities {
+                margin-top: 10px;
+                padding-top: 10px;
+                border-top: 1px dashed #ccc;
+            }
         </style>
 
         <div class="av-container">
             <div class="media-row">
                 <video id="av-video" style="display:none;"></video>
-                <div id="info"></div>
+                <div class="info-container">
+                    <div id="info"></div>
+                    <!-- Zone d'affichage pour getPhotoCapabilities() et getPhotoSettings() -->
+                    <div id="photo-capabilities"></div>
+                </div>
             </div>
 
             <audio id="av-audio" style="display:none;"></audio>
@@ -112,6 +121,7 @@
                 const downloadPhotoLink = this.shadowRoot.querySelector('#download-photo-link');
                 
                 const infoDiv = this.shadowRoot.querySelector('#info');
+                const photoCapabilitiesDiv = this.shadowRoot.querySelector('#photo-capabilities');
 
                 if (widthAttr) videoEl.setAttribute('width', widthAttr);
                 if (heightAttr) videoEl.setAttribute('height', heightAttr);
@@ -141,6 +151,10 @@
                                 const videoTrack = stream.getVideoTracks()[0];
                                 if ('ImageCapture' in window) {
                                     this.imageCapture = new ImageCapture(videoTrack);
+                                    // Lecture et affichage des capacités matérielles
+                                    this.displayPhotoCapabilities(photoCapabilitiesDiv);
+                                } else {
+                                    photoCapabilitiesDiv.innerHTML = "<p><em>API ImageCapture non supportée.</em></p>";
                                 }
                             }
 
@@ -173,7 +187,6 @@
                                 const context = canvasEl.getContext('2d');
                                 context.drawImage(imageBitmap, 0, 0);
 
-                                // Conversion du canvas en DataURL PNG pour le téléchargement
                                 const frameUrl = canvasEl.toDataURL('image/png');
                                 downloadFrameLink.href = frameUrl;
                                 downloadFrameLink.style.display = 'inline-block';
@@ -210,6 +223,7 @@
                     videoEl.style.display = 'none';
                     audioEl.style.display = 'none';
                     infoDiv.innerHTML = '';
+                    photoCapabilitiesDiv.innerHTML = '';
 
                     // Effacement du canvas et de son lien
                     const context = canvasEl.getContext('2d');
@@ -267,6 +281,34 @@
                     }
                 });
                 container.innerHTML = html;
+            }
+
+            // Affiche getPhotoCapabilities() et getPhotoSettings()
+            displayPhotoCapabilities(container) {
+                if (!this.imageCapture) return;
+
+                Promise.all([
+                    this.imageCapture.getPhotoCapabilities().catch(() => null),
+                    this.imageCapture.getPhotoSettings().catch(() => null)
+                ]).then(([caps, settings]) => {
+                    let html = "<p style='margin: 5px 0 2px 0;'><strong>Capacités Photo (ImageCapture) :</strong></p>";
+
+                    if (caps) {
+                        if (caps.imageWidth && caps.imageHeight) {
+                            html += `<p style='margin: 0 0 3px 0;'>- Résolution Photo Max : ${caps.imageWidth.max} x ${caps.imageHeight.max} px</p>`;
+                        }
+                        if (caps.fillLightMode && caps.fillLightMode.length > 0) {
+                            html += `<p style='margin: 0 0 3px 0;'>- Flash supporté : ${caps.fillLightMode.join(', ')}</p>`;
+                        }
+                    }
+
+                    if (settings) {
+                        html += `<p style='margin: 3px 0 2px 0;'><strong>Réglages courants :</strong></p>`;
+                        html += `<p style='margin: 0;'>- Dimensions actuelles : ${settings.imageWidth || 'N/C'} x ${settings.imageHeight || 'N/C'} px</p>`;
+                    }
+
+                    container.innerHTML = html;
+                });
             }
         }
 
