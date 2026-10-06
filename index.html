@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Exo 6 - Avec Template</title>
+    <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon">
+</head>
+<body>
+    <h1>Flux Media - Exo 6 </h1>
+
+    <template id="audio-video-template">
+        <style>
+            :host {
+                display: block;
+                font-family: sans-serif;
+                margin: 10px 0;
+            }
+            .controls {
+                margin-top: 10px;
+            }
+        </style>
+
+        <div class="av-container">
+            <video id="av-video" style="display:none;"></video>
+            <audio id="av-audio" style="display:none;"></audio>
+            <div class="controls">
+                <button id="btnStart">Démarrer</button>
+                <button id="btnStop" disabled>Stopper tout</button>
+                <br><br>
+                <span>Vidéo : </span>
+                <button id="btnPauseVideo" disabled>Pause Vidéo</button>
+                <button id="btnFullscreen" disabled>Plein écran</button>
+                <br><br>
+                <span>Audio : </span>
+                <button id="btnPauseAudio" disabled>Mute Audio</button>
+            </div>
+            <div id="info"></div>
+        </div>
+    </template>
+
+    <audio-video source="both" width="320"></audio-video>
+
+    <script>
+        class AudioVideoElement extends HTMLElement {
+            constructor() {
+                super();
+                this.mediaStream = null;
+
+                // Attachement du Shadow DOM
+                const shadowRoot = this.attachShadow({ mode: 'open' });
+                const template = document.getElementById('audio-video-template');
+                
+                // Clonage du contenu du template dans le Shadow DOM
+                shadowRoot.appendChild(template.content.cloneNode(true));
+            }
+
+            connectedCallback() {
+                const sourceAttr = this.getAttribute('source') || 'video';
+                const widthAttr = this.getAttribute('width');
+                const heightAttr = this.getAttribute('height');
+
+                // Récupération des éléments à l'intérieur du shadowRoot
+                const videoEl = this.shadowRoot.querySelector('#av-video');
+                const audioEl = this.shadowRoot.querySelector('#av-audio');
+                const btnStart = this.shadowRoot.querySelector('#btnStart');
+                const btnStop = this.shadowRoot.querySelector('#btnStop');
+                const btnPauseVideo = this.shadowRoot.querySelector('#btnPauseVideo');
+                const btnFullscreen = this.shadowRoot.querySelector('#btnFullscreen');
+                const btnPauseAudio = this.shadowRoot.querySelector('#btnPauseAudio');
+                const infoDiv = this.shadowRoot.querySelector('#info');
+
+                if (widthAttr) videoEl.setAttribute('width', widthAttr);
+                if (heightAttr) videoEl.setAttribute('height', heightAttr);
+
+                // Démarrer le flux
+                btnStart.addEventListener('click', () => {
+                    const wantAudio = sourceAttr === 'audio' || sourceAttr === 'both';
+                    const wantVideo = sourceAttr === 'video' || sourceAttr === 'both';
+
+                    navigator.mediaDevices.getUserMedia({ audio: wantAudio, video: wantVideo })
+                        .then((stream) => {
+                            this.mediaStream = stream;
+
+                            if (wantVideo) {
+                                videoEl.style.display = 'block';
+                                videoEl.srcObject = stream;
+                                videoEl.onloadedmetadata = () => {
+                                    if (videoEl.hasAttribute('width')) {
+                                        const w = videoEl.getAttribute('width');
+                                        videoEl.setAttribute('height', w * videoEl.videoHeight / videoEl.videoWidth);
+                                    } else if (videoEl.hasAttribute('height')) {
+                                        const h = videoEl.getAttribute('height');
+                                        videoEl.setAttribute('width', h * videoEl.videoWidth / videoEl.videoHeight);
+                                    }
+                                    videoEl.play();
+                                };
+                            }
+
+                            if (wantAudio && !wantVideo) {
+                                audioEl.style.display = 'block';
+                                audioEl.srcObject = stream;
+                                audioEl.play();
+                            }
+
+                            this.displayInfo(stream, infoDiv);
+
+                            btnStart.disabled = true;
+                            btnStop.disabled = false;
+                            btnPauseVideo.disabled = !wantVideo;
+                            btnFullscreen.disabled = !wantVideo;
+                            btnPauseAudio.disabled = !wantAudio;
+                            btnPauseVideo.textContent = "Pause Vidéo";
+                            btnPauseAudio.textContent = "Mute Audio";
+                        })
+                        .catch((err) => console.error(`${err.name}: ${err.message}`));
+                });
+
+                // Stopper tout
+                btnStop.addEventListener('click', () => {
+                    if (this.mediaStream) {
+                        this.mediaStream.getTracks().forEach(track => track.stop());
+                        videoEl.srcObject = null;
+                        audioEl.srcObject = null;
+                        this.mediaStream = null;
+                    }
+                    videoEl.style.display = 'none';
+                    audioEl.style.display = 'none';
+                    infoDiv.innerHTML = '';
+                    btnStart.disabled = false;
+                    btnStop.disabled = true;
+                    btnPauseVideo.disabled = true;
+                    btnFullscreen.disabled = true;
+                    btnPauseAudio.disabled = true;
+                });
+
+                // Pause Vidéo
+                btnPauseVideo.addEventListener('click', () => {
+                    if (videoEl.paused) {
+                        videoEl.play();
+                        btnPauseVideo.textContent = "Pause Vidéo";
+                    } else {
+                        videoEl.pause();
+                        btnPauseVideo.textContent = "Reprendre Vidéo";
+                    }
+                });
+
+                // Pause Audio (track.enabled)
+                btnPauseAudio.addEventListener('click', () => {
+                    const audioTrack = this.mediaStream?.getAudioTracks()[0];
+                    if (audioTrack) {
+                        audioTrack.enabled = !audioTrack.enabled;
+                        btnPauseAudio.textContent = audioTrack.enabled ? "Mute Audio" : "Unmute Audio";
+                    }
+                });
+
+                // Plein écran
+                btnFullscreen.addEventListener('click', () => {
+                    if (videoEl.requestFullscreen) videoEl.requestFullscreen();
+                });
+            }
+
+            displayInfo(stream, container) {
+                let html = "";
+                stream.getTracks().forEach((track) => {
+                    html += `<p><strong>Piste ${track.kind} :</strong> ${track.label}</p>`;
+                    if (track.kind === 'video') {
+                        const s = track.getSettings();
+                        html += `<p>Dimensions : ${s.width}x${s.height} px | FPS : ${s.frameRate || 'N/C'}</p>`;
+                    }
+                });
+                container.innerHTML = html;
+            }
+        }
+
+        customElements.define('audio-video', AudioVideoElement);
+    </script>
+</body>
+</html>
